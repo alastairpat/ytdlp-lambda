@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Outputs:
+  FunctionURL:
+    Value: !GetAtt LambdaUrl.FunctionUrl
+Resources:
+  LambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+  RolePolicies:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "AllowYTProxyLambdaS3"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "s3:GetObject"
+              - "s3:DeleteObject"
+              - "s3:PutObject"
+            Resource:
+             - !GetAtt S3Bucket.Arn
+             - !Join
+               - ''
+               - - !GetAtt S3Bucket.Arn
+                 - '/*'
+      Roles:
+        - !Ref LambdaRole
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAfter1Day
+            Status: Enabled
+            ExpirationInDays: 1
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: yt-dlproxy-lambda
+  Lambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures:
+        - arm64
+      Code:
+        ImageUri:
+          !Join
+            - ''
+            - - !GetAtt ECRRepository.RepositoryUri
+              - ':latest'
+      Environment:
+        Variables:
+          S3Bucket: !Ref S3Bucket
+      PackageType: Image
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 900
+  LambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: AWS_IAM
+      InvokeMode: BUFFERED
+      TargetFunctionArn: !Ref Lambda
